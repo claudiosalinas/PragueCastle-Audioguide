@@ -1,12 +1,27 @@
+// lib/main.dart
+import 'package:flutter/foundation.dart'; // per kIsWeb
+import 'dart:html' as html; // ⚠️ valido solo su Web, ok così
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'track_locations.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() {
   runApp(const PragueAudioGuideApp());
+
+  // Solo su Web: chiedi al service worker di scaricare tutto subito
+  if (kIsWeb && html.window.navigator.serviceWorker?.controller != null) {
+    html.window.navigator.serviceWorker!.controller!
+        .postMessage('downloadOffline');
+  }
 }
+
+
 
 class PragueAudioGuideApp extends StatelessWidget {
   const PragueAudioGuideApp({Key? key}) : super(key: key);
@@ -52,7 +67,15 @@ class _AudioMapPageState extends State<AudioMapPage> {
       setState(() => isPlaying = state.playing);
     });
   }
-
+void cacheAllAssets() {
+    if (kIsWeb && html.window.navigator.serviceWorker?.controller != null) {
+      html.window.navigator.serviceWorker!.controller!
+          .postMessage('downloadOffline');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Download offline avviato')),
+      );
+    }
+  }
   Future<void> playTrack(int index) async {
     if (currentTrack == index && isPlaying) return;
 
@@ -97,6 +120,49 @@ class _AudioMapPageState extends State<AudioMapPage> {
     }
   }
 
+  Future<void> downloadTrack(int index) async {
+    final fileName =
+        '${(index + 1).toString().padLeft(2, '0')}_${trackFileName(index)}.mp3';
+    // Request storage permission on Android only (iOS doesn't need this for app folder)
+    if (Platform.isAndroid) {
+      final status = await Permission.storage.request();
+      if (!status.isGranted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Permesso negato per salvare il file')),
+        );
+        return;
+      }
+    }
+
+    final assetPath = 'assets/audio/$fileName';
+    try {
+      final byteData = await rootBundle.load(assetPath);
+
+      Directory? baseDir;
+      if (Platform.isAndroid) {
+        baseDir = await getExternalStorageDirectory();
+      } else {
+        baseDir = await getApplicationDocumentsDirectory();
+      }
+
+      final targetDir = Directory('${baseDir!.path}/Audioguida_Praga');
+      if (!await targetDir.exists()) {
+        await targetDir.create(recursive: true);
+      }
+
+      final outFile = File('${targetDir.path}/$fileName');
+      await outFile.writeAsBytes(byteData.buffer.asUint8List());
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Traccia salvata in ${outFile.path}')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Errore salvataggio: $e')),
+      );
+    }
+  }
+
   @override
   void dispose() {
     player.dispose();
@@ -105,29 +171,46 @@ class _AudioMapPageState extends State<AudioMapPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (!hasStarted) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Prague Castle Audio Guide')),
-        body: Center(
-          child: ElevatedButton(
-            child: const Text('Start Audio'),
-            onPressed: () {
-              setState(() {
-                hasStarted = true;
-              });
-            },
-          ),
+if (!hasStarted) {
+  return Scaffold(
+    appBar: AppBar(
+      title: const Text('Prague Castle Audio Guide'),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.download),
+          tooltip: 'Scarica tutto offline',
+          onPressed: cacheAllAssets,
         ),
-      );
-    }
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Prague Castle Audio Guide')),
-      body: Column(
-        children: [
-          Expanded(
-            flex: 2,
-            child: FlutterMap(
+      ],
+    ),
+    body: Center(
+      child: ElevatedButton(
+        child: const Text('Start Audio'),
+        onPressed: () {
+          setState(() {
+            hasStarted = true;
+          });
+        },
+      ),
+    ),
+  );
+}
+return Scaffold(
+  appBar: AppBar(
+    title: const Text('Prague Castle Audio Guide'),
+    actions: [
+      IconButton(
+        icon: const Icon(Icons.download),
+        tooltip: 'Scarica tutto offline',
+        onPressed: cacheAllAssets,
+      ),
+    ],
+  ),
+  body: Column(
+    children: [
+      Expanded(
+        flex: 2,
+        child: FlutterMap(
               mapController: mapController,
               options: MapOptions(
                 initialCenter: trackLocations[currentTrack],
@@ -209,6 +292,11 @@ class _AudioMapPageState extends State<AudioMapPage> {
                     ),
                     Text(
                       "${trackPosition.toString().split('.').first} / ${trackDuration.toString().split('.').first}",
+                    ),
+                    const SizedBox(width: 20),
+                    ElevatedButton(
+                      onPressed: () => downloadTrack(currentTrack),
+                      child: const Text('Scarica traccia'),
                     ),
                   ],
                 ),

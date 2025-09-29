@@ -15,6 +15,9 @@ dependencies:
   just_audio: ^0.10.4
   rxdart: ^0.28.0
   geolocator: ^14.0.2
+  path_provider: ^2.0.15
+  permission_handler: ^10.4.0
+
 
 
 

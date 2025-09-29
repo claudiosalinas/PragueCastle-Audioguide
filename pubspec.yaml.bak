@@ -9,7 +9,15 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  audioplayers: ^4.0.1
+  flutter_map: ^8.2.1
+  flutter_map_marker_popup: ^8.0.1
+  latlong2: ^0.9.0
+  just_audio: ^0.10.4
+  rxdart: ^0.28.0
+  geolocator: ^14.0.2
+
+
+
 
 dev_dependencies:
   flutter_test:
@@ -17,7 +25,28 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-
   assets:
-    - assets/audio/
-
+    - assets/audio/01_welcome_to_prague_castle.mp3
+    - assets/audio/02_first_courtyard.mp3
+    - assets/audio/03_matthias_gate.mp3
+    - assets/audio/04_second_courtyard.mp3
+    - assets/audio/05_chapel_of_the_holy_cross.mp3
+    - assets/audio/06_spanish_hall.mp3
+    - assets/audio/07_third_courtyard.mp3
+    - assets/audio/08_st_vitus_cathedral.mp3
+    - assets/audio/09_south_portal.mp3
+    - assets/audio/10_st_wenceslas_chapel.mp3
+    - assets/audio/11_the_royal_crypt.mp3
+    - assets/audio/12_old_royal_palace_vladislav_hall.mp3
+    - assets/audio/13_ludwig_wing.mp3
+    - assets/audio/14_st_george_s_basilica.mp3
+    - assets/audio/15_st_george_s_convent.mp3
+    - assets/audio/16_golden_lane.mp3
+    - assets/audio/17_daliborka_tower.mp3
+    - assets/audio/18_white_tower.mp3
+    - assets/audio/19_powder_tower_mihulka.mp3
+    - assets/audio/20_black_tower.mp3
+    - assets/audio/21_old_castle_stairs.mp3
+    - assets/audio/22_south_gardens_garden_on_the_ramparts.mp3
+    - assets/audio/23_royal_garden.mp3
+    - assets/audio/24_exit_and_conclusion.mp3
