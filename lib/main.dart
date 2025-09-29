@@ -47,8 +47,6 @@ class AudioMapPage extends StatefulWidget {
 
 class _AudioMapPageState extends State<AudioMapPage> {
   final AudioPlayer player = AudioPlayer();
-  late ConcatenatingAudioSource playlist;
-
   int currentTrack = 0;
   late final MapController mapController;
   Duration trackDuration = Duration.zero;
@@ -61,19 +59,6 @@ class _AudioMapPageState extends State<AudioMapPage> {
     super.initState();
     mapController = MapController();
 
-    // Crea la playlist
-    playlist = ConcatenatingAudioSource(
-      children: List.generate(trackLocations.length, (i) {
-        return AudioSource.asset(
-          'assets/audio/${(i + 1).toString().padLeft(2, '0')}_${trackFileName(i)}.mp3',
-        );
-      }),
-    );
-
-    // Carica subito la playlist
-    player.setAudioSource(playlist);
-
-    // Listener normali
     player.durationStream.listen((d) {
       setState(() => trackDuration = d ?? Duration.zero);
     });
@@ -96,14 +81,28 @@ class _AudioMapPageState extends State<AudioMapPage> {
     }
   }
 
+  /// 🔧 FIX: aggiorna il player e la UI correttamente
   Future<void> playTrack(int index) async {
-    setState(() => currentTrack = index);
+    if (currentTrack == index && isPlaying) return;
 
-    // Vai direttamente alla traccia
-    await player.seek(Duration.zero, index: index);
+    await player.stop();
+
+    final filePath =
+        'assets/audio/${(index + 1).toString().padLeft(2, '0')}_${trackFileName(index)}.mp3';
+
+    // Carica la nuova traccia
+    await player.setAsset(filePath);
+
+    // Aggiorna la UI SOLO dopo aver caricato la traccia
+    setState(() {
+      currentTrack = index;
+      trackDuration = player.duration ?? Duration.zero;
+      trackPosition = Duration.zero;
+    });
+
     await player.play();
 
-    // Centra la mappa
+    // Sposta la mappa sul marker corretto
     mapController.move(trackLocations[index], 16.0);
   }
 

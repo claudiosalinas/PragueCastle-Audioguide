@@ -39511,12 +39511,12 @@ while(true)switch(s){case 0:if(p.e===a&&p.x){s=1
 break}o=p.d
 s=3
 return A.n(o.cd(0),$async$lp)
-case 3:p.az(new A.agk(p,a))
-n=B.d.j8(B.e.k(a+1),2,"0")
+case 3:n=B.d.j8(B.e.k(a+1),2,"0")
 m=p.yd(a)
 s=4
 return A.n(o.pB(A.c([A.aDb(A.fo("asset:///"+("assets/audio/"+n+"_"+m+".mp3")),null,null)],t.DG),null,null,!0),$async$lp)
-case 4:s=5
+case 4:p.az(new A.agk(p,a))
+s=5
 return A.n(o.dG(0),$async$lp)
 case 5:o=p.f
 o===$&&A.a()
@@ -39652,7 +39652,12 @@ A.age.prototype={
 $0(){return this.a.x=this.b.a},
 $S:0}
 A.agk.prototype={
-$0(){return this.a.e=this.b},
+$0(){var s,r=this.a
+r.e=this.b
+s=r.d.k3
+s=(s.e.b!==B.n?s.gn(0):null).a.e
+r.r=s==null?B.r:s
+r.w=B.r},
 $S:0}
 A.ag4.prototype={
 $1(a){this.a.d.ds(0,A.cg(0,B.c.cz(a),0))},
