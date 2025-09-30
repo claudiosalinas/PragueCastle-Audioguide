@@ -13,7 +13,7 @@ import 'track_locations.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:rxdart/rxdart.dart'; // per combinare gli stream
+import 'package:rxdart/rxdart.dart'; // 👈 per stream combinati
 
 void main() {
   runApp(const PragueAudioGuideApp());
@@ -79,7 +79,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
     await player.setAsset(filePath);
 
     setState(() {
-      currentTrack = index; // aggiorna traccia corrente
+      currentTrack = index; // 🔥 aggiorna subito
     });
 
     await player.play();
@@ -186,7 +186,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
     }
   }
 
-  /// 👇 Stream combinato per posizione/durata
+  /// 👇 Stream combinato (posizione + durata)
   Stream<PositionData> get _positionDataStream =>
       Rx.combineLatest3<Duration, Duration, Duration?, PositionData>(
         player.positionStream,
@@ -202,7 +202,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
   Widget audioControlsAndList() {
     return Column(
       children: [
-        // 🔥 titolo aggiornato
+        // 🔥 titolo aggiornato sempre
         Text(
           'Track ${currentTrack + 1}: ${trackFileName(currentTrack)}',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -231,8 +231,9 @@ class _AudioMapPageState extends State<AudioMapPage> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     IconButton(
-                      icon: Icon(
-                          player.playing ? Icons.pause : Icons.play_arrow),
+                      icon: Icon(player.playing
+                          ? Icons.pause
+                          : Icons.play_arrow),
                       onPressed: () {
                         if (player.playing) {
                           player.pause();
@@ -256,7 +257,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
           },
         ),
 
-        // Lista tracce
+        // 🔥 lista che evidenzia la traccia corrente
         Expanded(
           child: ListView.builder(
             itemCount: trackLocations.length,
