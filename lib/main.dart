@@ -1,9 +1,6 @@
 // lib/main.dart
 import 'package:flutter/foundation.dart'; // per kIsWeb
-// Import condizionale: su Web usa html_web.dart, altrove usa html_stub.dart
-import 'html_stub.dart'
-    if (dart.library.html) 'html_web.dart';
-
+import 'html_stub.dart' if (dart.library.html) 'html_web.dart';
 import 'dart:io' show File, Directory, Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,12 +10,10 @@ import 'track_locations.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:rxdart/rxdart.dart'; // per combinare gli stream
 
 void main() {
   runApp(const PragueAudioGuideApp());
 
-  // Solo su Web: chiedi al service worker di scaricare tutto subito
   if (kIsWeb &&
       HtmlHelper.window?.navigator.serviceWorker?.controller != null) {
     HtmlHelper.window!.navigator.serviceWorker!.controller!
@@ -48,14 +43,33 @@ class AudioMapPage extends StatefulWidget {
 
 class _AudioMapPageState extends State<AudioMapPage> {
   final AudioPlayer player = AudioPlayer();
-  int currentTrack = 0;
   late final MapController mapController;
-  bool hasStarted = false; // aspetta interazione utente
+  late final ConcatenatingAudioSource playlist;
+
+  int currentTrack = 0;
+  bool hasStarted = false;
 
   @override
   void initState() {
     super.initState();
     mapController = MapController();
+
+    playlist = ConcatenatingAudioSource(
+      children: List.generate(
+        trackLocations.length,
+        (index) => AudioSource.asset(
+          'assets/audio/${(index + 1).toString().padLeft(2, '0')}_${trackFileName(index)}.mp3',
+        ),
+      ),
+    );
+
+    player.setAudioSource(playlist);
+    player.currentIndexStream.listen((index) {
+      if (index != null) {
+        setState(() => currentTrack = index);
+        mapController.move(trackLocations[index], 16.0);
+      }
+    });
   }
 
   void cacheAllAssets() {
@@ -69,23 +83,9 @@ class _AudioMapPageState extends State<AudioMapPage> {
     }
   }
 
-  /// Play di una traccia
   Future<void> playTrack(int index) async {
-    await player.stop();
-
-    final filePath =
-        'assets/audio/${(index + 1).toString().padLeft(2, '0')}_${trackFileName(index)}.mp3';
-
-    await player.setAsset(filePath);
-
-    setState(() {
-      currentTrack = index;
-    });
-
+    await player.seek(Duration.zero, index: index);
     await player.play();
-
-    // Sposta la mappa sul marker corretto
-    mapController.move(trackLocations[index], 16.0);
   }
 
   String trackFileName(int index) {
@@ -186,88 +186,85 @@ class _AudioMapPageState extends State<AudioMapPage> {
     }
   }
 
-  /// 👇 Stream combinato per gestire posizione, buffer e durata
-  Stream<PositionData> get _positionDataStream =>
-      Rx.combineLatest3<Duration, Duration, Duration?, PositionData>(
-        player.positionStream,
-        player.bufferedPositionStream,
-        player.durationStream,
-        (position, bufferedPosition, duration) => PositionData(
-          position,
-          bufferedPosition,
-          duration ?? Duration.zero,
-        ),
-      );
-
   Widget audioControlsAndList() {
-    return StreamBuilder<PositionData>(
-      stream: _positionDataStream,
-      builder: (context, snapshot) {
-        final positionData = snapshot.data ??
-            PositionData(Duration.zero, Duration.zero, Duration.zero);
-
-        return Column(
+    return Column(
+      children: [
+        Text(
+          'Track ${currentTrack + 1}: ${trackFileName(currentTrack)}',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        StreamBuilder<Duration?>(
+          stream: player.durationStream,
+          builder: (context, snapshot) {
+            final duration = snapshot.data ?? Duration.zero;
+            return StreamBuilder<Duration>(
+              stream: player.positionStream,
+              builder: (context, snapshot) {
+                final position = snapshot.data ?? Duration.zero;
+                return Slider(
+                  min: 0,
+                  max: duration.inMilliseconds.toDouble(),
+                  value: position.inMilliseconds
+                      .clamp(0, duration.inMilliseconds)
+                      .toDouble(),
+                  onChanged: (value) {
+                    player.seek(Duration(milliseconds: value.toInt()));
+                  },
+                );
+              },
+            );
+          },
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // 👇 Titolo aggiornato
-            Text(
-              'Track ${currentTrack + 1}: ${trackFileName(currentTrack)}',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            Slider(
-              min: 0,
-              max: positionData.duration.inMilliseconds.toDouble(),
-              value: positionData.position.inMilliseconds
-                  .clamp(0, positionData.duration.inMilliseconds)
-                  .toDouble(),
-              onChanged: (value) {
-                player.seek(Duration(milliseconds: value.toInt()));
+            IconButton(
+              icon: Icon(player.playing ? Icons.pause : Icons.play_arrow),
+              onPressed: () {
+                if (player.playing) {
+                  player.pause();
+                } else {
+                  player.play();
+                }
               },
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  icon: Icon(player.playing ? Icons.pause : Icons.play_arrow),
-                  onPressed: () {
-                    if (player.playing) {
-                      player.pause();
-                    } else {
-                      player.play();
-                    }
-                  },
-                ),
-                Text(
-                  "${positionData.position.toString().split('.').first} / ${positionData.duration.toString().split('.').first}",
-                ),
-                const SizedBox(width: 20),
-                ElevatedButton(
-                  onPressed: () => downloadTrack(currentTrack),
-                  child: const Text('Scarica traccia'),
-                ),
-              ],
+            StreamBuilder<Duration>(
+              stream: player.positionStream,
+              builder: (context, snapshot) {
+                final position = snapshot.data ?? Duration.zero;
+                final duration = player.duration ?? Duration.zero;
+                return Text(
+                  "${position.toString().split('.').first} / ${duration.toString().split('.').first}",
+                );
+              },
             ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: trackLocations.length,
-                itemBuilder: (context, index) {
-                  final isCurrent = index == currentTrack;
-                  return ListTile(
-                    title: Text(
-                      'Stop ${index + 1}: ${trackFileName(index)}',
-                      style: TextStyle(
-                        fontWeight:
-                            isCurrent ? FontWeight.bold : FontWeight.normal,
-                        color: isCurrent ? Colors.green : Colors.black,
-                      ),
-                    ),
-                    onTap: () => playTrack(index),
-                  );
-                },
-              ),
+            const SizedBox(width: 20),
+            ElevatedButton(
+              onPressed: () => downloadTrack(currentTrack),
+              child: const Text('Scarica traccia'),
             ),
           ],
-        );
-      },
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: trackLocations.length,
+            itemBuilder: (context, index) {
+              final isCurrent = index == currentTrack;
+              return ListTile(
+                title: Text(
+                  'Stop ${index + 1}: ${trackFileName(index)}',
+                  style: TextStyle(
+                    fontWeight:
+                        isCurrent ? FontWeight.bold : FontWeight.normal,
+                    color: isCurrent ? Colors.green : Colors.black,
+                  ),
+                ),
+                onTap: () => playTrack(index),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -331,7 +328,8 @@ class _AudioMapPageState extends State<AudioMapPage> {
                   subdomains: const ['a', 'b', 'c'],
                 ),
                 MarkerLayer(
-                  markers: trackLocations.asMap().entries.map<Marker>((entry) {
+                  markers:
+                      trackLocations.asMap().entries.map<Marker>((entry) {
                     final index = entry.key;
                     final location = entry.value;
                     final isCurrent = index == currentTrack;
@@ -449,13 +447,4 @@ class _AudioMapPageState extends State<AudioMapPage> {
           : null,
     );
   }
-}
-
-/// 👇 Classe dati per unificare gli stream
-class PositionData {
-  final Duration position;
-  final Duration bufferedPosition;
-  final Duration duration;
-
-  PositionData(this.position, this.bufferedPosition, this.duration);
 }
