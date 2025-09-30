@@ -13,6 +13,7 @@ import 'track_locations.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:rxdart/rxdart.dart'; // per combinare gli stream
 
 void main() {
   runApp(const PragueAudioGuideApp());
@@ -78,7 +79,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
     await player.setAsset(filePath);
 
     setState(() {
-      currentTrack = index;
+      currentTrack = index; // aggiorna traccia corrente
     });
 
     await player.play();
@@ -185,69 +186,77 @@ class _AudioMapPageState extends State<AudioMapPage> {
     }
   }
 
+  /// 👇 Stream combinato per posizione/durata
+  Stream<PositionData> get _positionDataStream =>
+      Rx.combineLatest3<Duration, Duration, Duration?, PositionData>(
+        player.positionStream,
+        player.bufferedPositionStream,
+        player.durationStream,
+        (position, bufferedPosition, duration) => PositionData(
+          position,
+          bufferedPosition,
+          duration ?? Duration.zero,
+        ),
+      );
+
   Widget audioControlsAndList() {
     return Column(
       children: [
+        // 🔥 titolo aggiornato
         Text(
           'Track ${currentTrack + 1}: ${trackFileName(currentTrack)}',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
 
-        // 🔥 Player reattivo con StreamBuilder
-        StreamBuilder<Duration?>(
-          stream: player.durationStream,
+        // Player reattivo
+        StreamBuilder<PositionData>(
+          stream: _positionDataStream,
           builder: (context, snapshot) {
-            final duration = snapshot.data ?? Duration.zero;
+            final positionData = snapshot.data ??
+                PositionData(Duration.zero, Duration.zero, Duration.zero);
 
-            return StreamBuilder<Duration>(
-              stream: player.positionStream,
-              builder: (context, snapshot) {
-                final position = snapshot.data ?? Duration.zero;
-
-                return Column(
+            return Column(
+              children: [
+                Slider(
+                  min: 0,
+                  max: positionData.duration.inMilliseconds.toDouble(),
+                  value: positionData.position.inMilliseconds
+                      .clamp(0, positionData.duration.inMilliseconds)
+                      .toDouble(),
+                  onChanged: (value) {
+                    player.seek(Duration(milliseconds: value.toInt()));
+                  },
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Slider(
-                      min: 0,
-                      max: duration.inMilliseconds.toDouble(),
-                      value: position.inMilliseconds
-                          .clamp(0, duration.inMilliseconds)
-                          .toDouble(),
-                      onChanged: (value) {
-                        player.seek(Duration(milliseconds: value.toInt()));
+                    IconButton(
+                      icon: Icon(
+                          player.playing ? Icons.pause : Icons.play_arrow),
+                      onPressed: () {
+                        if (player.playing) {
+                          player.pause();
+                        } else {
+                          player.play();
+                        }
                       },
                     ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        IconButton(
-                          icon: Icon(player.playing
-                              ? Icons.pause
-                              : Icons.play_arrow),
-                          onPressed: () {
-                            if (player.playing) {
-                              player.pause();
-                            } else {
-                              player.play();
-                            }
-                          },
-                        ),
-                        Text(
-                          "${position.toString().split('.').first} / ${duration.toString().split('.').first}",
-                        ),
-                        const SizedBox(width: 20),
-                        ElevatedButton(
-                          onPressed: () => downloadTrack(currentTrack),
-                          child: const Text('Scarica traccia'),
-                        ),
-                      ],
+                    Text(
+                      "${positionData.position.toString().split('.').first} / ${positionData.duration.toString().split('.').first}",
+                    ),
+                    const SizedBox(width: 20),
+                    ElevatedButton(
+                      onPressed: () => downloadTrack(currentTrack),
+                      child: const Text('Scarica traccia'),
                     ),
                   ],
-                );
-              },
+                ),
+              ],
             );
           },
         ),
 
+        // Lista tracce
         Expanded(
           child: ListView.builder(
             itemCount: trackLocations.length,
@@ -450,4 +459,13 @@ class _AudioMapPageState extends State<AudioMapPage> {
           : null,
     );
   }
+}
+
+/// 👇 Classe dati per unificare gli stream
+class PositionData {
+  final Duration position;
+  final Duration bufferedPosition;
+  final Duration duration;
+
+  PositionData(this.position, this.bufferedPosition, this.duration);
 }
