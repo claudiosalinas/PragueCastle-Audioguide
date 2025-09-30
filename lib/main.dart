@@ -13,7 +13,7 @@ import 'track_locations.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:rxdart/rxdart.dart';
+import 'package:rxdart/rxdart.dart'; // per combinare gli stream
 
 void main() {
   runApp(const PragueAudioGuideApp());
@@ -50,7 +50,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
   final AudioPlayer player = AudioPlayer();
   int currentTrack = 0;
   late final MapController mapController;
-  bool hasStarted = false;
+  bool hasStarted = false; // aspetta interazione utente
 
   @override
   void initState() {
@@ -79,7 +79,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
     await player.setAsset(filePath);
 
     setState(() {
-      currentTrack = index; // 👈 aggiorna titolo e highlight
+      currentTrack = index;
     });
 
     await player.play();
@@ -186,7 +186,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
     }
   }
 
-  /// Unifica stream posizione/durata
+  /// 👇 Stream combinato per gestire posizione, buffer e durata
   Stream<PositionData> get _positionDataStream =>
       Rx.combineLatest3<Duration, Duration, Duration?, PositionData>(
         player.positionStream,
@@ -200,84 +200,74 @@ class _AudioMapPageState extends State<AudioMapPage> {
       );
 
   Widget audioControlsAndList() {
-    return Column(
-      children: [
-        // 👇 Titolo aggiornato correttamente
-        Text(
-          'Track ${currentTrack + 1}: ${trackFileName(currentTrack)}',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
+    return StreamBuilder<PositionData>(
+      stream: _positionDataStream,
+      builder: (context, snapshot) {
+        final positionData = snapshot.data ??
+            PositionData(Duration.zero, Duration.zero, Duration.zero);
 
-        // Player reattivo
-        StreamBuilder<PositionData>(
-          stream: _positionDataStream,
-          builder: (context, snapshot) {
-            final positionData = snapshot.data ??
-                PositionData(Duration.zero, Duration.zero, Duration.zero);
-
-            return Column(
+        return Column(
+          children: [
+            // 👇 Titolo aggiornato
+            Text(
+              'Track ${currentTrack + 1}: ${trackFileName(currentTrack)}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            Slider(
+              min: 0,
+              max: positionData.duration.inMilliseconds.toDouble(),
+              value: positionData.position.inMilliseconds
+                  .clamp(0, positionData.duration.inMilliseconds)
+                  .toDouble(),
+              onChanged: (value) {
+                player.seek(Duration(milliseconds: value.toInt()));
+              },
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Slider(
-                  min: 0,
-                  max: positionData.duration.inMilliseconds.toDouble(),
-                  value: positionData.position.inMilliseconds
-                      .clamp(0, positionData.duration.inMilliseconds)
-                      .toDouble(),
-                  onChanged: (value) {
-                    player.seek(Duration(milliseconds: value.toInt()));
+                IconButton(
+                  icon: Icon(player.playing ? Icons.pause : Icons.play_arrow),
+                  onPressed: () {
+                    if (player.playing) {
+                      player.pause();
+                    } else {
+                      player.play();
+                    }
                   },
                 ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    IconButton(
-                      icon: Icon(player.playing
-                          ? Icons.pause
-                          : Icons.play_arrow),
-                      onPressed: () {
-                        if (player.playing) {
-                          player.pause();
-                        } else {
-                          player.play();
-                        }
-                      },
-                    ),
-                    Text(
-                      "${positionData.position.toString().split('.').first} / ${positionData.duration.toString().split('.').first}",
-                    ),
-                    const SizedBox(width: 20),
-                    ElevatedButton(
-                      onPressed: () => downloadTrack(currentTrack),
-                      child: const Text('Scarica traccia'),
-                    ),
-                  ],
+                Text(
+                  "${positionData.position.toString().split('.').first} / ${positionData.duration.toString().split('.').first}",
+                ),
+                const SizedBox(width: 20),
+                ElevatedButton(
+                  onPressed: () => downloadTrack(currentTrack),
+                  child: const Text('Scarica traccia'),
                 ),
               ],
-            );
-          },
-        ),
-
-        // Lista tracce con evidenziazione corretta
-        Expanded(
-          child: ListView.builder(
-            itemCount: trackLocations.length,
-            itemBuilder: (context, index) {
-              final isCurrent = index == currentTrack;
-              return ListTile(
-                title: Text(
-                  'Stop ${index + 1}: ${trackFileName(index)}',
-                  style: TextStyle(
-                    fontWeight:
-                        isCurrent ? FontWeight.bold : FontWeight.normal,
-                    color: isCurrent ? Colors.green : Colors.black,
-                  ),
-                ),
-                onTap: () => playTrack(index),
-              );
-            },
-          ),
-        ),
-      ],
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: trackLocations.length,
+                itemBuilder: (context, index) {
+                  final isCurrent = index == currentTrack;
+                  return ListTile(
+                    title: Text(
+                      'Stop ${index + 1}: ${trackFileName(index)}',
+                      style: TextStyle(
+                        fontWeight:
+                            isCurrent ? FontWeight.bold : FontWeight.normal,
+                        color: isCurrent ? Colors.green : Colors.black,
+                      ),
+                    ),
+                    onTap: () => playTrack(index),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -341,8 +331,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
                   subdomains: const ['a', 'b', 'c'],
                 ),
                 MarkerLayer(
-                  markers:
-                      trackLocations.asMap().entries.map<Marker>((entry) {
+                  markers: trackLocations.asMap().entries.map<Marker>((entry) {
                     final index = entry.key;
                     final location = entry.value;
                     final isCurrent = index == currentTrack;
