@@ -1,6 +1,9 @@
 // lib/main.dart
 import 'package:flutter/foundation.dart'; // per kIsWeb
-import 'html_stub.dart' if (dart.library.html) 'html_web.dart';
+// Import condizionale: su Web usa html_web.dart, altrove usa html_stub.dart
+import 'html_stub.dart'
+    if (dart.library.html) 'html_web.dart';
+
 import 'dart:io' show File, Directory, Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,6 +17,7 @@ import 'package:permission_handler/permission_handler.dart';
 void main() {
   runApp(const PragueAudioGuideApp());
 
+  // Solo su Web: chiedi al service worker di scaricare tutto subito
   if (kIsWeb &&
       HtmlHelper.window?.navigator.serviceWorker?.controller != null) {
     HtmlHelper.window!.navigator.serviceWorker!.controller!
@@ -43,32 +47,24 @@ class AudioMapPage extends StatefulWidget {
 
 class _AudioMapPageState extends State<AudioMapPage> {
   final AudioPlayer player = AudioPlayer();
-  late final MapController mapController;
-  late final ConcatenatingAudioSource playlist;
-
   int currentTrack = 0;
-  bool hasStarted = false;
+  late final MapController mapController;
+  bool hasStarted = false; // aspetta interazione utente
+
+  Duration trackDuration = Duration.zero;
+  Duration trackPosition = Duration.zero;
 
   @override
   void initState() {
     super.initState();
     mapController = MapController();
 
-    playlist = ConcatenatingAudioSource(
-      children: List.generate(
-        trackLocations.length,
-        (index) => AudioSource.asset(
-          'assets/audio/${(index + 1).toString().padLeft(2, '0')}_${trackFileName(index)}.mp3',
-        ),
-      ),
-    );
-
-    player.setAudioSource(playlist);
-    player.currentIndexStream.listen((index) {
-      if (index != null) {
-        setState(() => currentTrack = index);
-        mapController.move(trackLocations[index], 16.0);
-      }
+    // Ascolta durata e posizione per aggiornare il cursore
+    player.durationStream.listen((d) {
+      setState(() => trackDuration = d ?? Duration.zero);
+    });
+    player.positionStream.listen((p) {
+      setState(() => trackPosition = p);
     });
   }
 
@@ -83,9 +79,24 @@ class _AudioMapPageState extends State<AudioMapPage> {
     }
   }
 
+  /// Play di una traccia
   Future<void> playTrack(int index) async {
-    await player.seek(Duration.zero, index: index);
+    await player.stop();
+
+    final filePath =
+        'assets/audio/${(index + 1).toString().padLeft(2, '0')}_${trackFileName(index)}.mp3';
+
+    await player.setAsset(filePath);
+
+    setState(() {
+      currentTrack = index; // 👈 aggiorna traccia corrente
+      trackPosition = Duration.zero;
+    });
+
     await player.play();
+
+    // Sposta la mappa sul marker corretto
+    mapController.move(trackLocations[index], 16.0);
   }
 
   String trackFileName(int index) {
@@ -189,30 +200,19 @@ class _AudioMapPageState extends State<AudioMapPage> {
   Widget audioControlsAndList() {
     return Column(
       children: [
+        // 👇 Titolo sempre aggiornato
         Text(
           'Track ${currentTrack + 1}: ${trackFileName(currentTrack)}',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
-        StreamBuilder<Duration?>(
-          stream: player.durationStream,
-          builder: (context, snapshot) {
-            final duration = snapshot.data ?? Duration.zero;
-            return StreamBuilder<Duration>(
-              stream: player.positionStream,
-              builder: (context, snapshot) {
-                final position = snapshot.data ?? Duration.zero;
-                return Slider(
-                  min: 0,
-                  max: duration.inMilliseconds.toDouble(),
-                  value: position.inMilliseconds
-                      .clamp(0, duration.inMilliseconds)
-                      .toDouble(),
-                  onChanged: (value) {
-                    player.seek(Duration(milliseconds: value.toInt()));
-                  },
-                );
-              },
-            );
+        Slider(
+          min: 0,
+          max: trackDuration.inMilliseconds.toDouble(),
+          value: trackPosition.inMilliseconds
+              .clamp(0, trackDuration.inMilliseconds)
+              .toDouble(),
+          onChanged: (value) {
+            player.seek(Duration(milliseconds: value.toInt()));
           },
         ),
         Row(
@@ -228,15 +228,8 @@ class _AudioMapPageState extends State<AudioMapPage> {
                 }
               },
             ),
-            StreamBuilder<Duration>(
-              stream: player.positionStream,
-              builder: (context, snapshot) {
-                final position = snapshot.data ?? Duration.zero;
-                final duration = player.duration ?? Duration.zero;
-                return Text(
-                  "${position.toString().split('.').first} / ${duration.toString().split('.').first}",
-                );
-              },
+            Text(
+              "${trackPosition.toString().split('.').first} / ${trackDuration.toString().split('.').first}",
             ),
             const SizedBox(width: 20),
             ElevatedButton(
@@ -249,13 +242,12 @@ class _AudioMapPageState extends State<AudioMapPage> {
           child: ListView.builder(
             itemCount: trackLocations.length,
             itemBuilder: (context, index) {
-              final isCurrent = index == currentTrack;
+              final isCurrent = index == currentTrack; // evidenzia traccia attuale
               return ListTile(
                 title: Text(
                   'Stop ${index + 1}: ${trackFileName(index)}',
                   style: TextStyle(
-                    fontWeight:
-                        isCurrent ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
                     color: isCurrent ? Colors.green : Colors.black,
                   ),
                 ),
@@ -328,12 +320,10 @@ class _AudioMapPageState extends State<AudioMapPage> {
                   subdomains: const ['a', 'b', 'c'],
                 ),
                 MarkerLayer(
-                  markers:
-                      trackLocations.asMap().entries.map<Marker>((entry) {
+                  markers: trackLocations.asMap().entries.map<Marker>((entry) {
                     final index = entry.key;
                     final location = entry.value;
                     final isCurrent = index == currentTrack;
-
                     return Marker(
                       point: location,
                       width: 50,
@@ -384,13 +374,11 @@ class _AudioMapPageState extends State<AudioMapPage> {
                         subdomains: const ['a', 'b', 'c'],
                       ),
                       MarkerLayer(
-                        markers: trackLocations.asMap()
-                            .entries
-                            .map<Marker>((entry) {
+                        markers:
+                            trackLocations.asMap().entries.map<Marker>((entry) {
                           final index = entry.key;
                           final location = entry.value;
                           final isCurrent = index == currentTrack;
-
                           return Marker(
                             point: location,
                             width: 50,
@@ -402,9 +390,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
                                 children: [
                                   Icon(
                                     Icons.location_on,
-                                    color: isCurrent
-                                        ? Colors.green
-                                        : Colors.red,
+                                    color: isCurrent ? Colors.green : Colors.red,
                                     size: isCurrent ? 50 : 40,
                                   ),
                                   Positioned(
