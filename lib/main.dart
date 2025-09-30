@@ -1,9 +1,6 @@
 // lib/main.dart
 import 'package:flutter/foundation.dart'; // per kIsWeb
-// Import condizionale: su Web usa html_web.dart, altrove usa html_stub.dart
-import 'html_stub.dart'
-    if (dart.library.html) 'html_web.dart';
-
+import 'html_stub.dart' if (dart.library.html) 'html_web.dart';
 import 'dart:io' show File, Directory, Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,7 +14,6 @@ import 'package:permission_handler/permission_handler.dart';
 void main() {
   runApp(const PragueAudioGuideApp());
 
-  // Solo su Web: chiedi al service worker di scaricare tutto subito
   if (kIsWeb &&
       HtmlHelper.window?.navigator.serviceWorker?.controller != null) {
     HtmlHelper.window!.navigator.serviceWorker!.controller!
@@ -49,18 +45,24 @@ class _AudioMapPageState extends State<AudioMapPage> {
   final AudioPlayer player = AudioPlayer();
   int currentTrack = 0;
   late final MapController mapController;
+
   Duration trackDuration = Duration.zero;
   Duration trackPosition = Duration.zero;
   bool isPlaying = false;
-  bool hasStarted = false; // aspetta interazione utente
+  bool hasStarted = false;
+
+  ConcatenatingAudioSource? playlist;
 
   @override
   void initState() {
     super.initState();
     mapController = MapController();
 
+    // 🔄 ascolta aggiornamenti
     player.durationStream.listen((d) {
-      setState(() => trackDuration = d ?? Duration.zero);
+      if (d != null) {
+        setState(() => trackDuration = d);
+      }
     });
     player.positionStream.listen((p) {
       setState(() => trackPosition = p);
@@ -68,6 +70,22 @@ class _AudioMapPageState extends State<AudioMapPage> {
     player.playerStateStream.listen((state) {
       setState(() => isPlaying = state.playing);
     });
+    player.currentIndexStream.listen((index) {
+      if (index != null) {
+        setState(() => currentTrack = index);
+      }
+    });
+  }
+
+  Future<void> preloadTracks() async {
+    final sources = List.generate(
+      trackLocations.length,
+      (i) => AudioSource.asset(
+        'assets/audio/${(i + 1).toString().padLeft(2, '0')}_${trackFileName(i)}.mp3',
+      ),
+    );
+    playlist = ConcatenatingAudioSource(children: sources);
+    await player.setAudioSource(playlist!);
   }
 
   void cacheAllAssets() {
@@ -81,84 +99,42 @@ class _AudioMapPageState extends State<AudioMapPage> {
     }
   }
 
-  /// 🔧 FIX: aggiorna il player e la UI correttamente
   Future<void> playTrack(int index) async {
-    if (currentTrack == index && isPlaying) return;
-
-    await player.stop();
-
-    final filePath =
-        'assets/audio/${(index + 1).toString().padLeft(2, '0')}_${trackFileName(index)}.mp3';
-
-    // Carica la nuova traccia
-    await player.setAsset(filePath);
-
-    // Aggiorna la UI SOLO dopo aver caricato la traccia
-    setState(() {
-      currentTrack = index;
-      trackDuration = player.duration ?? Duration.zero;
-      trackPosition = Duration.zero;
-    });
-
+    if (playlist == null) return; // non ancora pronto
+    await player.seek(Duration.zero, index: index);
     await player.play();
 
-    // Sposta la mappa sul marker corretto
     mapController.move(trackLocations[index], 16.0);
   }
 
   String trackFileName(int index) {
-    switch (index) {
-      case 0:
-        return 'welcome_to_prague_castle';
-      case 1:
-        return 'first_courtyard';
-      case 2:
-        return 'matthias_gate';
-      case 3:
-        return 'second_courtyard';
-      case 4:
-        return 'chapel_of_the_holy_cross';
-      case 5:
-        return 'spanish_hall';
-      case 6:
-        return 'third_courtyard';
-      case 7:
-        return 'st_vitus_cathedral';
-      case 8:
-        return 'south_portal';
-      case 9:
-        return 'st_wenceslas_chapel';
-      case 10:
-        return 'the_royal_crypt';
-      case 11:
-        return 'old_royal_palace_vladislav_hall';
-      case 12:
-        return 'ludwig_wing';
-      case 13:
-        return 'st_george_s_basilica';
-      case 14:
-        return 'st_george_s_convent';
-      case 15:
-        return 'golden_lane';
-      case 16:
-        return 'daliborka_tower';
-      case 17:
-        return 'white_tower';
-      case 18:
-        return 'powder_tower_mihulka';
-      case 19:
-        return 'black_tower';
-      case 20:
-        return 'old_castle_stairs';
-      case 21:
-        return 'south_gardens_garden_on_the_ramparts';
-      case 22:
-        return 'royal_garden';
-      case 23:
-        return 'exit_and_conclusion';
-      default:
-        return '';
-    }
+    const names = [
+      'welcome_to_prague_castle',
+      'first_courtyard',
+      'matthias_gate',
+      'second_courtyard',
+      'chapel_of_the_holy_cross',
+      'spanish_hall',
+      'third_courtyard',
+      'st_vitus_cathedral',
+      'south_portal',
+      'st_wenceslas_chapel',
+      'the_royal_crypt',
+      'old_royal_palace_vladislav_hall',
+      'ludwig_wing',
+      'st_george_s_basilica',
+      'st_george_s_convent',
+      'golden_lane',
+      'daliborka_tower',
+      'white_tower',
+      'powder_tower_mihulka',
+      'black_tower',
+      'old_castle_stairs',
+      'south_gardens_garden_on_the_ramparts',
+      'royal_garden',
+      'exit_and_conclusion',
+    ];
+    return (index >= 0 && index < names.length) ? names[index] : '';
   }
 
   Future<void> downloadTrack(int index) async {
@@ -292,7 +268,8 @@ class _AudioMapPageState extends State<AudioMapPage> {
         body: Center(
           child: ElevatedButton(
             child: const Text('Start Audio'),
-            onPressed: () {
+            onPressed: () async {
+              await preloadTracks(); // 🔥 prepara tutte le tracce
               setState(() {
                 hasStarted = true;
               });
@@ -327,8 +304,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
                   subdomains: const ['a', 'b', 'c'],
                 ),
                 MarkerLayer(
-                  markers:
-                      trackLocations.asMap().entries.map<Marker>((entry) {
+                  markers: trackLocations.asMap().entries.map<Marker>((entry) {
                     final index = entry.key;
                     final location = entry.value;
                     final isCurrent = index == currentTrack;
