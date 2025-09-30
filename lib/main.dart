@@ -13,7 +13,7 @@ import 'track_locations.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:rxdart/rxdart.dart'; // 👈 per stream combinati
+import 'package:rxdart/rxdart.dart';
 
 void main() {
   runApp(const PragueAudioGuideApp());
@@ -50,7 +50,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
   final AudioPlayer player = AudioPlayer();
   int currentTrack = 0;
   late final MapController mapController;
-  bool hasStarted = false; // aspetta interazione utente
+  bool hasStarted = false;
 
   @override
   void initState() {
@@ -79,7 +79,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
     await player.setAsset(filePath);
 
     setState(() {
-      currentTrack = index; // 🔥 aggiorna subito
+      currentTrack = index; // 👈 aggiorna titolo e highlight
     });
 
     await player.play();
@@ -186,7 +186,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
     }
   }
 
-  /// 👇 Stream combinato (posizione + durata)
+  /// Unifica stream posizione/durata
   Stream<PositionData> get _positionDataStream =>
       Rx.combineLatest3<Duration, Duration, Duration?, PositionData>(
         player.positionStream,
@@ -202,7 +202,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
   Widget audioControlsAndList() {
     return Column(
       children: [
-        // 🔥 titolo aggiornato sempre
+        // 👇 Titolo aggiornato correttamente
         Text(
           'Track ${currentTrack + 1}: ${trackFileName(currentTrack)}',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -257,7 +257,7 @@ class _AudioMapPageState extends State<AudioMapPage> {
           },
         ),
 
-        // 🔥 lista che evidenzia la traccia corrente
+        // Lista tracce con evidenziazione corretta
         Expanded(
           child: ListView.builder(
             itemCount: trackLocations.length,
